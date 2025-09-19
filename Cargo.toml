@@ -1,0 +1,10 @@
+[package]
+name = "osc-sender"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.27"
+egui = "0.27"
+rosc = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
