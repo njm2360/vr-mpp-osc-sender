@@ -35,6 +35,8 @@ impl OscSenderApp {
             let socket = UdpSocket::bind("0.0.0.0:0").expect("Failed to bind UDP socket");
 
             let mut toggle = 0;
+            let mut prev_sending = false;
+
             loop {
                 let (interval, sending, port) = {
                     let state = cloned_state.lock().unwrap();
@@ -42,18 +44,14 @@ impl OscSenderApp {
                 };
 
                 if sending {
-                    let msg = OscMessage {
-                        addr: "/input/UseRight".to_string(),
-                        args: vec![OscType::Int(toggle)],
-                    };
+                    send_osc(&socket, port, toggle);
                     toggle = 1 - toggle;
-
-                    let packet = OscPacket::Message(msg);
-                    let buf = encoder::encode(&packet).unwrap();
-
-                    let addr = format!("127.0.0.1:{}", port);
-                    let _ = socket.send_to(&buf, &addr);
+                } else if prev_sending {
+                    send_osc(&socket, port, 0);
+                    toggle = 0;
                 }
+
+                prev_sending = sending;
 
                 thread::sleep(Duration::from_millis((interval / 2).max(1)));
             }
@@ -86,6 +84,17 @@ impl OscSenderApp {
     }
 }
 
+fn send_osc(socket: &UdpSocket, port: u16, value: i32) {
+    let msg = OscMessage {
+        addr: "/input/UseRight".to_string(),
+        args: vec![OscType::Int(value)],
+    };
+    if let Ok(buf) = encoder::encode(&OscPacket::Message(msg)) {
+        let addr = format!("127.0.0.1:{}", port);
+        let _ = socket.send_to(&buf, &addr);
+    }
+}
+
 impl eframe::App for OscSenderApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -109,19 +118,21 @@ impl eframe::App for OscSenderApp {
             ui.horizontal(|ui| {
                 ui.label("Destination Port:");
 
-                if ui.button("−").clicked() {
-                    self.nudge_port(-2);
-                }
-                let mut port_str = self.port.to_string();
-                ui.add(
-                    egui::TextEdit::singleline(&mut port_str)
-                        .hint_text("port")
-                        .interactive(false)
-                        .desired_width(70.0),
-                );
-                if ui.button("+").clicked() {
-                    self.nudge_port(2);
-                }
+                ui.add_enabled_ui(!self.checked, |ui| {
+                    if ui.button("−").clicked() {
+                        self.nudge_port(-2);
+                    }
+                    let mut port_str = self.port.to_string();
+                    ui.add(
+                        egui::TextEdit::singleline(&mut port_str)
+                            .hint_text("port")
+                            .interactive(false)
+                            .desired_width(70.0),
+                    );
+                    if ui.button("+").clicked() {
+                        self.nudge_port(2);
+                    }
+                });
             });
 
             let mut display = format!("{}:localhost:{}", self.port, (self.port as u32) + 1);
@@ -145,7 +156,7 @@ fn main() {
     eframe::run_native(
         "OSC Sender",
         options,
-        Box::new(|cc| Box::new(OscSenderApp::new(cc))),
+        Box::new(|cc| Ok(Box::new(OscSenderApp::new(cc)) as Box<dyn eframe::App>)),
     )
     .unwrap();
 }
